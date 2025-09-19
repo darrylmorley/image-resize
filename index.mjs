@@ -11,6 +11,14 @@ const PADDING_PCT = parseFloat(process.env.PAD || "0.05"); // 5% breathing room
 const V_BIAS_PCT = parseFloat(process.env.VBIAS || "-0.00"); // lift subject slightly
 const ALPHA_THRESH = parseInt(process.env.ATHRESH || "16", 10); // 0–255
 
+const HQ = process.env.HQ === "1";
+if (HQ) {
+  console.log("High-quality background removal mode enabled.");
+}
+
+const SMOOTH_THRESH = parseInt(process.env.SMOOTH_THRESH || "180", 10);
+const SMOOTH_BLUR = parseFloat(process.env.SMOOTH_BLUR || "1.2");
+
 async function* walk(dir) {
   for (const d of await fs.readdir(dir, { withFileTypes: true })) {
     const p = path.resolve(dir, d.name);
@@ -68,10 +76,50 @@ async function findAlphaBBoxAndCentroid(rgbaBuf) {
   return { bbox, cx, cy, w, h };
 }
 
+async function smoothAlpha(rgbaBuf) {
+  const img = sharp(rgbaBuf);
+  const meta = await img.metadata();
+  const rgb = img.removeAlpha();
+  const alpha = img
+    .extractChannel("alpha")
+    .blur(SMOOTH_BLUR)
+    .threshold(SMOOTH_THRESH);
+  const alphaBuf = await alpha.raw().toBuffer();
+  const alphaImg = sharp(alphaBuf, {
+    raw: { width: meta.width, height: meta.height, channels: 1 },
+  });
+  const alphaPng = await alphaImg.png().toBuffer();
+  const rgbBuf = await rgb.raw().toBuffer();
+  const rgbImg = sharp(rgbBuf, {
+    raw: { width: meta.width, height: meta.height, channels: 3 },
+  });
+  const rgbPng = await rgbImg.png().toBuffer();
+  // recombine rgb and smoothed alpha
+  const combined = await sharp(rgbPng).joinChannel(alphaPng).png().toBuffer();
+  return combined;
+}
+
 async function removeBgToRGBA(filePath) {
-  const blob = await removeBackground(filePath); // PNG Blob with transparency
+  let blob;
+  if (HQ) {
+    try {
+      blob = await removeBackground(filePath, {
+        outputType: "png",
+        fast: false,
+        model: "medium",
+      });
+    } catch {
+      blob = await removeBackground(filePath);
+    }
+  } else {
+    blob = await removeBackground(filePath); // PNG Blob with transparency
+  }
   const buf = Buffer.from(await blob.arrayBuffer()); // -> Buffer
-  return await sharp(buf).ensureAlpha().png().toBuffer(); // normalized RGBA
+  let rgba = await sharp(buf).ensureAlpha().png().toBuffer(); // normalized RGBA
+  if (HQ) {
+    rgba = await smoothAlpha(rgba);
+  }
+  return rgba;
 }
 
 async function toSquareWebP(rgbaBuf, padPct = PADDING_PCT, centroid = null) {
