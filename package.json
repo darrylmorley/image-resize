@@ -1,0 +1,26 @@
+{
+  "name": "image-resize",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "c": "node index.mjs in out",
+    "cu": "node index.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.6.3",
+  "dependencies": {
+    "@imgly/background-removal-node": "^1.4.5",
+    "node-fetch": "3",
+    "sharp": "0.34"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "onnxruntime-node",
+      "sharp"
+    ]
+  }
+}
